@@ -21,6 +21,10 @@
 		return ABSOLUTE_RE.test(t) || RELATIVE_RE.test(t);
 	});
 	if (!resetEl) {
+		var startsEl = Array.from(section.querySelectorAll('p')).find(function (p) {
+			return p.textContent.trim() === 'Starts when a message is sent';
+		});
+		if (startsEl) return;
 		alert('tgif-claude: weekly reset text not found');
 		return;
 	}
@@ -29,10 +33,7 @@
 
 	var barContainer = row.querySelector('.bg-bg-000');
 	var fillEl = barContainer && barContainer.querySelector('.bg-accent-secondary-200');
-	if (!fillEl) {
-		alert('tgif-claude: progress bar elements not found');
-		return;
-	}
+	if (!fillEl) return;
 
 	var lastUpdatedEl = Array.from(document.querySelectorAll('p')).find(function (p) {
 		return p.textContent.trim().startsWith('Last updated:');
