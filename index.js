@@ -1,4 +1,5 @@
 (function () {
+	function run() {
 	['tgif-claude-marker', 'tgif-claude-label'].forEach(function (id) {
 		var el = document.getElementById(id);
 		if (el) el.remove();
@@ -24,7 +25,14 @@
 		var startsEl = Array.from(section.querySelectorAll('p')).find(function (p) {
 			return p.textContent.trim() === 'Starts when a message is sent';
 		});
-		if (startsEl) return;
+		if (startsEl) {
+			var waitObserver = new MutationObserver(function () {
+				waitObserver.disconnect();
+				run();
+			});
+			waitObserver.observe(section, { childList: true, subtree: true, characterData: true });
+			return;
+		}
 		alert('tgif-claude: weekly reset text not found');
 		return;
 	}
@@ -133,4 +141,5 @@
 		observer.observe(lastUpdatedEl, { childList: true, subtree: true, characterData: true });
 	}
 
+	} run();
 })();
