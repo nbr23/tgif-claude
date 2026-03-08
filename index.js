@@ -1,25 +1,32 @@
 (function () {
-	// Idempotent: remove any previous injection before re-running
 	['tgif-claude-marker', 'tgif-claude-label'].forEach(function (id) {
 		var el = document.getElementById(id);
 		if (el) el.remove();
 	});
 
-	// Find the weekly reset paragraph: "Resets Sun 10:00 AM"
-	// Session resets have "Resets in X hr Y min" — excluded by the regex below.
-	var resetEl = Array.from(document.querySelectorAll('p')).find(function (p) {
-		return /^Resets \w{3} \d{1,2}:\d{2} [AP]M$/.test(p.textContent.trim());
+	var weeklyH2 = Array.from(document.querySelectorAll('h2')).find(function (h2) {
+		return h2.textContent.trim() === 'Weekly limits';
+	});
+	if (!weeklyH2) {
+		alert('tgif-claude: "Weekly limits" heading not found');
+		return;
+	}
+
+	var section = weeklyH2.parentElement.parentElement;
+	var ABSOLUTE_RE = /^Resets \w{3} \d{1,2}:\d{2} [AP]M$/;
+	var RELATIVE_RE = /^Resets in /;
+
+	var resetEl = Array.from(section.querySelectorAll('p')).find(function (p) {
+		var t = p.textContent.trim();
+		return ABSOLUTE_RE.test(t) || RELATIVE_RE.test(t);
 	});
 	if (!resetEl) {
 		alert('tgif-claude: weekly reset text not found');
 		return;
 	}
 
-	// DOM path from the reset <p>:
-	//   p → div.flex-col (label column) → div.flex-row (the usage row)
 	var row = resetEl.parentElement.parentElement;
 
-	// Bar container (.bg-bg-000) and fill (.bg-accent-secondary-200) live inside the row
 	var barContainer = row.querySelector('.bg-bg-000');
 	var fillEl = barContainer && barContainer.querySelector('.bg-accent-secondary-200');
 	if (!fillEl) {
@@ -27,24 +34,45 @@
 		return;
 	}
 
-	// "Last updated: 1 minute ago" paragraph and refresh button, just below the weekly section
 	var lastUpdatedEl = Array.from(document.querySelectorAll('p')).find(function (p) {
 		return p.textContent.trim().startsWith('Last updated:');
 	});
 	var refreshBtn = document.querySelector('button[aria-label="Refresh usage limits"]');
 
-	// Parse "Resets Sun 10:00 AM" → reset time components (constant for the lifetime of the page)
-	var m = resetEl.textContent.trim().match(/Resets (\w+) (\d+):(\d+) ([AP]M)/);
-	var DAY_MAP = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-	var targetDay = DAY_MAP[m[1]];
-	var hour = parseInt(m[2], 10);
-	var minute = parseInt(m[3], 10);
-	if (m[4] === 'PM' && hour !== 12) hour += 12;
-	if (m[4] === 'AM' && hour === 12) hour = 0;
-
 	var WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+	var DAY_MAP = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
-	// Create marker and label once; update() mutates them on every refresh
+	function parseMsLeft() {
+		var text = resetEl.textContent.trim();
+
+		var abs = text.match(/Resets (\w+) (\d+):(\d+) ([AP]M)/);
+		if (abs) {
+			var targetDay = DAY_MAP[abs[1]];
+			var hour = parseInt(abs[2], 10);
+			var minute = parseInt(abs[3], 10);
+			if (abs[4] === 'PM' && hour !== 12) hour += 12;
+			if (abs[4] === 'AM' && hour === 12) hour = 0;
+
+			var now = new Date();
+			var reset = new Date(now);
+			reset.setHours(hour, minute, 0, 0);
+			var daysUntil = (targetDay - now.getDay() + 7) % 7;
+			if (daysUntil === 0 && reset <= now) daysUntil = 7;
+			reset.setDate(reset.getDate() + daysUntil);
+			return reset - now;
+		}
+
+		var rel = text.match(/Resets in (?:(\d+)\s*d\s*)?(?:(\d+)\s*hr?\s*)?(?:(\d+)\s*min)?/);
+		if (rel) {
+			var d = parseInt(rel[1], 10) || 0;
+			var h = parseInt(rel[2], 10) || 0;
+			var m = parseInt(rel[3], 10) || 0;
+			return ((d * 24 + h) * 60 + m) * 60 * 1000;
+		}
+
+		return null;
+	}
+
 	barContainer.style.position = 'relative';
 
 	var marker = document.createElement('div');
@@ -63,19 +91,14 @@
 	function update(reason) {
 		var usagePct = parseFloat(fillEl.style.width) || 0;
 
-		var now = new Date();
-		var reset = new Date(now);
-		reset.setHours(hour, minute, 0, 0);
+		var msLeft = parseMsLeft();
+		if (msLeft === null) {
+			label.textContent = 'tgif-claude: could not parse reset time';
+			return;
+		}
 
-		// Advance to the next occurrence of targetDay
-		var daysUntil = (targetDay - now.getDay() + 7) % 7;
-		if (daysUntil === 0 && reset <= now) daysUntil = 7; // same day but time already passed
-		reset.setDate(reset.getDate() + daysUntil);
+		var timeElapsedPct = Math.max(0, Math.min(100, ((WEEK_MS - msLeft) / WEEK_MS) * 100));
 
-		var elapsed = WEEK_MS - (reset - now);
-		var timeElapsedPct = Math.max(0, Math.min(100, (elapsed / WEEK_MS) * 100));
-
-		var msLeft = reset - now;
 		var daysLeft = Math.floor(msLeft / (24 * 60 * 60 * 1000));
 		var hoursLeft = Math.floor((msLeft % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
 		var minsLeft = Math.floor((msLeft % (60 * 60 * 1000)) / (60 * 1000));
@@ -100,10 +123,8 @@
 			(delta >= 0 ? '+' : '') + delta.toFixed(1) + '% (' + statusText + ')</b>';
 	}
 
-	// Initial render
 	update('init');
 
-	// Observe the "Last updated: ..." text — it changes when fresh data arrives (periodic or manual)
 	if (lastUpdatedEl) {
 		var observer = new MutationObserver(function () {
 			update('lastUpdated mutation');
