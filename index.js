@@ -5,24 +5,37 @@
 		if (el) el.remove();
 	});
 
-	var weeklyH2 = Array.from(document.querySelectorAll('h2')).find(function (h2) {
-		return h2.textContent.trim() === 'Weekly limits';
-	});
-	if (!weeklyH2) {
-		alert('tgif-claude: "Weekly limits" heading not found');
-		return;
+	// Find the weekly reset paragraph: "Resets Sun 10:00 AM" (en) or "Réinitialisation dim. 10:00" (fr)
+	var LANGS = [
+		{
+			detect: /^Resets \w{3} \d{1,2}:\d{2} [AP]M$/,
+			parse:  /Resets (\w+) (\d+):(\d+) ([AP]M)/,
+			days:   { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 },
+			ampm:   true,
+		},
+		{
+			detect: /^Réinitialisation \w{3}\. \d{1,2}:\d{2}$/,
+			parse:  /Réinitialisation (\w+)\. (\d+):(\d+)/,
+			days:   { dim: 0, lun: 1, mar: 2, mer: 3, jeu: 4, ven: 5, sam: 6 },
+			ampm:   false,
+		},
+	];
+	var RELATIVE_RE = /^Resets in |^Réinitialisation dans /;
+	var resetEl, lang;
+	for (var i = 0; i < LANGS.length && !resetEl; i++) {
+		lang = LANGS[i];
+		resetEl = Array.from(document.querySelectorAll('p')).find(function (p) {
+			return lang.detect.test(p.textContent.trim());
+		});
 	}
-
-	var section = weeklyH2.parentElement.parentElement;
-	var ABSOLUTE_RE = /^Resets \w{3} \d{1,2}:\d{2} [AP]M$/;
-	var RELATIVE_RE = /^Resets in /;
-
-	var resetEl = Array.from(section.querySelectorAll('p')).find(function (p) {
-		var t = p.textContent.trim();
-		return ABSOLUTE_RE.test(t) || RELATIVE_RE.test(t);
-	});
 	if (!resetEl) {
-		var startsEl = Array.from(section.querySelectorAll('p')).find(function (p) {
+		resetEl = Array.from(document.querySelectorAll('p')).find(function (p) {
+			return RELATIVE_RE.test(p.textContent.trim());
+		});
+		if (resetEl) lang = LANGS[0];
+	}
+	if (!resetEl) {
+		var startsEl = Array.from(document.querySelectorAll('p')).find(function (p) {
 			return p.textContent.trim() === 'Starts when a message is sent';
 		});
 		if (startsEl) {
@@ -30,7 +43,7 @@
 				waitObserver.disconnect();
 				run();
 			});
-			waitObserver.observe(section, { childList: true, subtree: true, characterData: true });
+			waitObserver.observe(startsEl.closest('section') || startsEl.parentElement, { childList: true, subtree: true, characterData: true });
 			return;
 		}
 		alert('tgif-claude: weekly reset text not found');
@@ -49,18 +62,19 @@
 	var refreshBtn = document.querySelector('button[aria-label="Refresh usage limits"]');
 
 	var WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-	var DAY_MAP = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
 	function parseMsLeft() {
 		var text = resetEl.textContent.trim();
 
-		var abs = text.match(/Resets (\w+) (\d+):(\d+) ([AP]M)/);
+		var abs = text.match(lang.parse);
 		if (abs) {
-			var targetDay = DAY_MAP[abs[1]];
+			var targetDay = lang.days[abs[1]];
 			var hour = parseInt(abs[2], 10);
 			var minute = parseInt(abs[3], 10);
-			if (abs[4] === 'PM' && hour !== 12) hour += 12;
-			if (abs[4] === 'AM' && hour === 12) hour = 0;
+			if (lang.ampm) {
+				if (abs[4] === 'PM' && hour !== 12) hour += 12;
+				if (abs[4] === 'AM' && hour === 12) hour = 0;
+			}
 
 			var now = new Date();
 			var reset = new Date(now);
@@ -71,7 +85,7 @@
 			return reset - now;
 		}
 
-		var rel = text.match(/Resets in (?:(\d+)\s*d\s*)?(?:(\d+)\s*hr?\s*)?(?:(\d+)\s*min)?/);
+		var rel = text.match(/(?:Resets in|Réinitialisation dans) (?:(\d+)\s*d\s*)?(?:(\d+)\s*hr?\s*)?(?:(\d+)\s*min)?/);
 		if (rel) {
 			var d = parseInt(rel[1], 10) || 0;
 			var h = parseInt(rel[2], 10) || 0;
