@@ -19,6 +19,12 @@
 			startsText:    'Starts when a message is sent',
 			lastUpdated:   'Last updated:',
 			refreshLabel:  'Refresh usage limits',
+			timeElapsed:   'Time elapsed:',
+			resetsIn:      'Resets in:',
+			overPace:      'over pace',
+			underPace:     'under pace',
+			parseError:    'tgif-claude: could not parse reset time',
+			notFound:      'tgif-claude: weekly reset text not found',
 		},
 		fr: {
 			detect:        /^Réinitialisation \w{3}\. \d{1,2}:\d{2}$/,
@@ -30,6 +36,12 @@
 			startsText:    'Commence quand un message est envoyé',
 			lastUpdated:   'Dernière mise à jour :',
 			refreshLabel:  'Actualiser les limites d\'utilisation',
+			timeElapsed:   'Temps \u00e9coul\u00e9\u00a0:',
+			resetsIn:      'R\u00e9initialisation dans\u00a0:',
+			overPace:      'en avance',
+			underPace:     'en retard',
+			parseError:    'tgif-claude : impossible de lire l\u2019heure de réinitialisation',
+			notFound:      'tgif-claude : texte de réinitialisation hebdomadaire introuvable',
 		},
 	};
 
@@ -55,7 +67,7 @@
 			waitObserver.observe(startsEl.closest('section') || startsEl.parentElement, { childList: true, subtree: true, characterData: true });
 			return;
 		}
-		alert('tgif-claude: weekly reset text not found');
+		alert(lang.notFound);
 		return;
 	}
 
@@ -125,7 +137,7 @@
 
 		var msLeft = parseMsLeft();
 		if (msLeft === null) {
-			label.textContent = 'tgif-claude: could not parse reset time';
+			label.textContent = lang.parseError;
 			return;
 		}
 
@@ -143,14 +155,14 @@
 		var delta = usagePct - timeElapsedPct;
 		var overPace = delta > 0;
 		var statusColor = overPace ? '#dc2626' : '#16a34a';
-		var statusText = overPace ? 'over pace' : 'under pace';
+		var statusText = overPace ? lang.overPace : lang.underPace;
 
 		console.log('[tgif-claude] usage=' + usagePct + '% elapsed=' + timeElapsedPct.toFixed(1) + '% delta=' + (delta >= 0 ? '+' : '') + delta.toFixed(1) + '%');
 
 		marker.style.left = timeElapsedPct.toFixed(2) + '%';
 		label.innerHTML =
-			'Time elapsed: <b>' + timeElapsedPct.toFixed(1) + '%</b>' +
-			' | Resets in: <b>' + remainingStr + '</b>' +
+			lang.timeElapsed + ' <b>' + timeElapsedPct.toFixed(1) + '%</b>' +
+			' | ' + lang.resetsIn + ' <b>' + remainingStr + '</b>' +
 			' | Delta: <b style="color:' + statusColor + '">' +
 			(delta >= 0 ? '+' : '') + delta.toFixed(1) + '% (' + statusText + ')</b>';
 	}
