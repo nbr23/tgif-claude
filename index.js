@@ -5,38 +5,47 @@
 		if (el) el.remove();
 	});
 
-	// Find the weekly reset paragraph: "Resets Sun 10:00 AM" (en) or "Réinitialisation dim. 10:00" (fr)
-	var LANGS = [
-		{
-			detect: /^Resets \w{3} \d{1,2}:\d{2} [AP]M$/,
-			parse:  /Resets (\w+) (\d+):(\d+) ([AP]M)/,
-			days:   { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 },
-			ampm:   true,
+	// Detect language from <html lang="..."> attribute, default to English
+	var htmlLang = (document.documentElement.getAttribute('lang') || 'en').toLowerCase().split('-')[0];
+
+	var LANGS = {
+		en: {
+			detect:        /^Resets \w{3} \d{1,2}:\d{2} [AP]M$/,
+			parse:         /Resets (\w+) (\d+):(\d+) ([AP]M)/,
+			relative:      /^Resets in /,
+			relParse:      /Resets in (?:(\d+)\s*d\s*)?(?:(\d+)\s*hr?\s*)?(?:(\d+)\s*min)?/,
+			days:          { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 },
+			ampm:          true,
+			startsText:    'Starts when a message is sent',
+			lastUpdated:   'Last updated:',
+			refreshLabel:  'Refresh usage limits',
 		},
-		{
-			detect: /^Réinitialisation \w{3}\. \d{1,2}:\d{2}$/,
-			parse:  /Réinitialisation (\w+)\. (\d+):(\d+)/,
-			days:   { dim: 0, lun: 1, mar: 2, mer: 3, jeu: 4, ven: 5, sam: 6 },
-			ampm:   false,
+		fr: {
+			detect:        /^Réinitialisation \w{3}\. \d{1,2}:\d{2}$/,
+			parse:         /Réinitialisation (\w+)\. (\d+):(\d+)/,
+			relative:      /^Réinitialisation dans /,
+			relParse:      /Réinitialisation dans (?:(\d+)\s*j\s*)?(?:(\d+)\s*h\s*)?(?:(\d+)\s*min)?/,
+			days:          { dim: 0, lun: 1, mar: 2, mer: 3, jeu: 4, ven: 5, sam: 6 },
+			ampm:          false,
+			startsText:    'Commence quand un message est envoyé',
+			lastUpdated:   'Dernière mise à jour :',
+			refreshLabel:  'Actualiser les limites d\'utilisation',
 		},
-	];
-	var RELATIVE_RE = /^Resets in |^Réinitialisation dans /;
-	var resetEl, lang;
-	for (var i = 0; i < LANGS.length && !resetEl; i++) {
-		lang = LANGS[i];
-		resetEl = Array.from(document.querySelectorAll('p')).find(function (p) {
-			return lang.detect.test(p.textContent.trim());
-		});
-	}
+	};
+
+	var lang = LANGS[htmlLang] || LANGS.en;
+
+	var resetEl = Array.from(document.querySelectorAll('p')).find(function (p) {
+		return lang.detect.test(p.textContent.trim());
+	});
 	if (!resetEl) {
 		resetEl = Array.from(document.querySelectorAll('p')).find(function (p) {
-			return RELATIVE_RE.test(p.textContent.trim());
+			return lang.relative.test(p.textContent.trim());
 		});
-		if (resetEl) lang = LANGS[0];
 	}
 	if (!resetEl) {
 		var startsEl = Array.from(document.querySelectorAll('p')).find(function (p) {
-			return p.textContent.trim() === 'Starts when a message is sent';
+			return p.textContent.trim() === lang.startsText;
 		});
 		if (startsEl) {
 			var waitObserver = new MutationObserver(function () {
@@ -53,13 +62,13 @@
 	var row = resetEl.parentElement.parentElement;
 
 	var barContainer = row.querySelector('.bg-bg-000');
-	var fillEl = barContainer && barContainer.querySelector('.bg-accent-secondary-200');
+	var fillEl = barContainer && barContainer.querySelector('.bg-accent-200');
 	if (!fillEl) return;
 
 	var lastUpdatedEl = Array.from(document.querySelectorAll('p')).find(function (p) {
-		return p.textContent.trim().startsWith('Last updated:');
+		return p.textContent.trim().startsWith(lang.lastUpdated);
 	});
-	var refreshBtn = document.querySelector('button[aria-label="Refresh usage limits"]');
+	var refreshBtn = document.querySelector('button[aria-label="' + lang.refreshLabel + '"]');
 
 	var WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -85,7 +94,7 @@
 			return reset - now;
 		}
 
-		var rel = text.match(/(?:Resets in|Réinitialisation dans) (?:(\d+)\s*d\s*)?(?:(\d+)\s*hr?\s*)?(?:(\d+)\s*min)?/);
+		var rel = text.match(lang.relParse);
 		if (rel) {
 			var d = parseInt(rel[1], 10) || 0;
 			var h = parseInt(rel[2], 10) || 0;
