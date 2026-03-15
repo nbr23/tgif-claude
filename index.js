@@ -25,6 +25,7 @@
 			underPace:     'under pace',
 			parseError:    'tgif-claude: could not parse reset time',
 			notFound:      'tgif-claude: weekly reset text not found',
+			weeklyHeading: 'Weekly limits',
 		},
 		fr: {
 			detect:        /^Réinitialisation \w{3}\. \d{1,2}:\d{2}$/,
@@ -42,21 +43,32 @@
 			underPace:     'en retard',
 			parseError:    'tgif-claude : impossible de lire l\u2019heure de réinitialisation',
 			notFound:      'tgif-claude : texte de réinitialisation hebdomadaire introuvable',
+			weeklyHeading: 'Limites hebdomadaires',
 		},
 	};
 
 	var lang = LANGS[htmlLang] || LANGS.en;
 
-	var resetEl = Array.from(document.querySelectorAll('p')).find(function (p) {
+	// Find the "Weekly limits" heading, then scope all searches to its container
+	var weeklyHeading = Array.from(document.querySelectorAll('h2')).find(function (h) {
+		return h.textContent.trim() === lang.weeklyHeading;
+	});
+	var weeklySection = weeklyHeading && weeklyHeading.closest('.space-y-6');
+	if (!weeklySection) weeklySection = weeklyHeading && weeklyHeading.parentElement && weeklyHeading.parentElement.parentElement;
+	if (!weeklySection) { alert(lang.notFound); return; }
+
+	var weeklyPs = Array.from(weeklySection.querySelectorAll('p'));
+
+	var resetEl = weeklyPs.find(function (p) {
 		return lang.detect.test(p.textContent.trim());
 	});
 	if (!resetEl) {
-		resetEl = Array.from(document.querySelectorAll('p')).find(function (p) {
+		resetEl = weeklyPs.find(function (p) {
 			return lang.relative.test(p.textContent.trim());
 		});
 	}
 	if (!resetEl) {
-		var startsEl = Array.from(document.querySelectorAll('p')).find(function (p) {
+		var startsEl = weeklyPs.find(function (p) {
 			return p.textContent.trim() === lang.startsText;
 		});
 		if (startsEl) {
@@ -64,7 +76,7 @@
 				waitObserver.disconnect();
 				run();
 			});
-			waitObserver.observe(startsEl.closest('section') || startsEl.parentElement, { childList: true, subtree: true, characterData: true });
+			waitObserver.observe(weeklySection, { childList: true, subtree: true, characterData: true });
 			return;
 		}
 		alert(lang.notFound);
