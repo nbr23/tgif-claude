@@ -20,10 +20,12 @@
 			startsText:    'Starts when a message is sent',
 			lastUpdated:   'Last updated:',
 			refreshLabel:  'Refresh usage limits',
-			timeElapsed:   'Time elapsed:',
-			resetsIn:      'Resets in:',
+			timeElapsed:   'Elapsed:',
+			resetsIn:      'Resets in',
 			overPace:      'over pace',
 			underPace:     'under pace',
+			ahead:         'ahead',
+			behind:        'behind',
 			parseError:    'tgif-claude: could not parse reset time',
 			notFound:      'tgif-claude: weekly reset text not found',
 			weeklyHeading: 'Weekly limits',
@@ -39,10 +41,12 @@
 			startsText:    'Commence quand un message est envoyé',
 			lastUpdated:   'Dernière mise à jour :',
 			refreshLabel:  'Actualiser les limites d\'utilisation',
-			timeElapsed:   'Temps \u00e9coul\u00e9\u00a0:',
-			resetsIn:      'R\u00e9initialisation dans\u00a0:',
+			timeElapsed:   '\u00c9coul\u00e9\u00a0:',
+			resetsIn:      'R\u00e9init. dans',
 			overPace:      'en avance',
 			underPace:     'en retard',
+			ahead:         'd\'avance',
+			behind:        'de retard',
 			parseError:    'tgif-claude : impossible de lire l\u2019heure de réinitialisation',
 			notFound:      'tgif-claude : texte de réinitialisation hebdomadaire introuvable',
 			weeklyHeading: 'Limites hebdomadaires',
@@ -239,6 +243,17 @@
 		var statusColor = overPace ? '#dc2626' : '#16a34a';
 		var statusText = overPace ? lang.overPace : lang.underPace;
 
+		var usageTime = formatTooltipTime(new Date(weekStartMs + (usagePct / 100) * WEEK_MS));
+		var deltaMs = Math.abs(delta) / 100 * WEEK_MS;
+		var deltaDays = Math.floor(deltaMs / (24 * 60 * 60 * 1000));
+		var deltaHours = Math.floor((deltaMs % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+		var deltaMins = Math.floor((deltaMs % (60 * 60 * 1000)) / (60 * 1000));
+		var deltaParts = [];
+		if (deltaDays > 0) deltaParts.push(deltaDays + 'd');
+		if (deltaHours > 0 || deltaDays > 0) deltaParts.push(deltaHours + 'h');
+		deltaParts.push(deltaMins + 'm');
+		var deltaTimeStr = deltaParts.join(' ') + ' ' + (overPace ? lang.ahead : lang.behind);
+
 		console.log('[tgif-claude] usage=' + usagePct + '% elapsed=' + timeElapsedPct.toFixed(1) + '% delta=' + (delta >= 0 ? '+' : '') + delta.toFixed(1) + '%');
 
 		updateSession();
@@ -246,8 +261,10 @@
 		label.innerHTML =
 			lang.timeElapsed + ' <b>' + timeElapsedPct.toFixed(1) + '%</b>' +
 			' | ' + lang.resetsIn + ' <b>' + remainingStr + '</b>' +
-			' | Delta: <b style="color:' + statusColor + '">' +
-			(delta >= 0 ? '+' : '') + delta.toFixed(1) + '% (' + statusText + ')</b>';
+			'<br>' +
+			'Delta: <b style="color:' + statusColor + '">' +
+			(delta >= 0 ? '+' : '') + delta.toFixed(1) + '% \u2014 ' + deltaTimeStr + '</b>' +
+			' <span style="opacity:0.7">(\u2248 ' + usageTime + ')</span>';
 	}
 
 	update('init');
