@@ -15,6 +15,7 @@
 			relative:      /^Resets in /,
 			relParse:      /Resets in (?:(\d+)\s*d\s*)?(?:(\d+)\s*hr?\s*)?(?:(\d+)\s*min)?/,
 			days:          { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 },
+			dayNames:      ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
 			ampm:          true,
 			startsText:    'Starts when a message is sent',
 			lastUpdated:   'Last updated:',
@@ -33,6 +34,7 @@
 			relative:      /^Réinitialisation dans /,
 			relParse:      /Réinitialisation dans (?:(\d+)\s*j\s*)?(?:(\d+)\s*h\s*)?(?:(\d+)\s*min)?/,
 			days:          { dim: 0, lun: 1, mar: 2, mer: 3, jeu: 4, ven: 5, sam: 6 },
+			dayNames:      ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'],
 			ampm:          false,
 			startsText:    'Commence quand un message est envoyé',
 			lastUpdated:   'Dernière mise à jour :',
@@ -168,6 +170,42 @@
 		'background:#f97316;pointer-events:none;border-radius:1px;';
 	barContainer.appendChild(marker);
 
+	var tooltip = document.createElement('div');
+	tooltip.style.cssText =
+		'position:absolute;display:none;pointer-events:none;' +
+		'background:#1e1e2e;color:#fff;font-size:11px;padding:3px 7px;' +
+		'border-radius:4px;white-space:nowrap;bottom:calc(100% + 6px);' +
+		'transform:translateX(-50%);z-index:9999;';
+	barContainer.appendChild(tooltip);
+
+	var weekStartMs = 0;
+
+	function formatTooltipTime(date) {
+		var day = lang.dayNames[date.getDay()];
+		var h = date.getHours();
+		var m = date.getMinutes();
+		var mm = (m < 10 ? '0' : '') + m;
+		if (lang.ampm) {
+			var suffix = h >= 12 ? ' PM' : ' AM';
+			h = h % 12 || 12;
+			return day + ' ' + h + ':' + mm + suffix;
+		}
+		return day + ' ' + h + ':' + mm;
+	}
+
+	barContainer.addEventListener('mousemove', function (e) {
+		if (!weekStartMs) return;
+		var pct = Math.max(0, Math.min(100, (e.offsetX / barContainer.offsetWidth) * 100));
+		var time = new Date(weekStartMs + (pct / 100) * WEEK_MS);
+		tooltip.textContent = formatTooltipTime(time);
+		tooltip.style.left = e.offsetX + 'px';
+		tooltip.style.display = 'block';
+	});
+
+	barContainer.addEventListener('mouseleave', function () {
+		tooltip.style.display = 'none';
+	});
+
 	var label = document.createElement('div');
 	label.id = 'tgif-claude-label';
 	label.className = resetEl.className;
@@ -182,6 +220,8 @@
 			label.textContent = lang.parseError;
 			return;
 		}
+
+		weekStartMs = Date.now() + msLeft - WEEK_MS;
 
 		var timeElapsedPct = Math.max(0, Math.min(100, ((WEEK_MS - msLeft) / WEEK_MS) * 100));
 
