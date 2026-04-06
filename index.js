@@ -176,11 +176,17 @@
 
 	var tooltip = document.createElement('div');
 	tooltip.style.cssText =
-		'position:absolute;display:none;pointer-events:none;' +
+		'position:fixed;display:none;pointer-events:none;' +
 		'background:#1e1e2e;color:#fff;font-size:11px;padding:3px 7px;' +
-		'border-radius:4px;white-space:nowrap;bottom:calc(100% + 6px);' +
-		'transform:translateX(-50%);z-index:9999;';
-	barContainer.appendChild(tooltip);
+		'border-radius:4px;white-space:nowrap;z-index:9999;';
+	var tooltipText = document.createElement('span');
+	tooltip.appendChild(tooltipText);
+	var tooltipArrow = document.createElement('div');
+	tooltipArrow.style.cssText =
+		'position:absolute;left:50%;transform:translateX(-50%);top:100%;' +
+		'border:5px solid transparent;border-top-color:#fff;';
+	tooltip.appendChild(tooltipArrow);
+	document.body.appendChild(tooltip);
 
 	var weekStartMs = 0;
 
@@ -199,11 +205,15 @@
 
 	barContainer.addEventListener('mousemove', function (e) {
 		if (!weekStartMs) return;
-		var pct = Math.max(0, Math.min(100, (e.offsetX / barContainer.offsetWidth) * 100));
+		var rect = barContainer.getBoundingClientRect();
+		var x = e.clientX - rect.left;
+		var pct = Math.max(0, Math.min(100, (x / rect.width) * 100));
 		var time = new Date(weekStartMs + (pct / 100) * WEEK_MS);
-		tooltip.textContent = formatTooltipTime(time);
-		tooltip.style.left = e.offsetX + 'px';
+		tooltipText.textContent = formatTooltipTime(time);
 		tooltip.style.display = 'block';
+		var ttLeft = e.clientX - (tooltip.offsetWidth / 2);
+		tooltip.style.left = ttLeft + 'px';
+		tooltip.style.top = (rect.top - tooltip.offsetHeight - 8) + 'px';
 	});
 
 	barContainer.addEventListener('mouseleave', function () {
