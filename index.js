@@ -1,6 +1,6 @@
 (function () {
 	function run() {
-	['tgif-claude-marker', 'tgif-claude-label', 'tgif-claude-session'].forEach(function (id) {
+	['tgif-claude-marker', 'tgif-claude-label', 'tgif-claude-session', 'tgif-claude-weekly-at'].forEach(function (id) {
 		var el = document.getElementById(id);
 		if (el) el.remove();
 	});
@@ -130,6 +130,30 @@
 		span.id = 'tgif-claude-session';
 		span.textContent = ' (at ' + rh + ':00 ' + rampm + ')';
 		sel.appendChild(span);
+	}
+
+	function updateWeeklyAt(msLeft) {
+		var existing = document.getElementById('tgif-claude-weekly-at');
+		if (existing) existing.remove();
+		if (!lang.relative.test(resetEl.textContent.trim())) return;
+		var resetAt = new Date(Date.now() + msLeft);
+		if (resetAt.getMinutes() >= 30) resetAt.setHours(resetAt.getHours() + 1);
+		resetAt.setMinutes(0, 0, 0);
+		var day = lang.dayNames[resetAt.getDay()];
+		var rh = resetAt.getHours();
+		var mm = '00';
+		var timeStr;
+		if (lang.ampm) {
+			var rampm = rh >= 12 ? 'PM' : 'AM';
+			rh = rh % 12 || 12;
+			timeStr = day + ' ' + rh + ':' + mm + ' ' + rampm;
+		} else {
+			timeStr = day + ' ' + rh + ':' + mm;
+		}
+		var span = document.createElement('span');
+		span.id = 'tgif-claude-weekly-at';
+		span.textContent = ' (at ' + timeStr + ')';
+		resetEl.appendChild(span);
 	}
 
 	function parseMsLeft() {
@@ -267,6 +291,7 @@
 		console.log('[tgif-claude] usage=' + usagePct + '% elapsed=' + timeElapsedPct.toFixed(1) + '% delta=' + (delta >= 0 ? '+' : '') + delta.toFixed(1) + '%');
 
 		updateSession();
+		updateWeeklyAt(msLeft);
 		marker.style.left = timeElapsedPct.toFixed(2) + '%';
 		label.innerHTML =
 			lang.timeElapsed + ' <b>' + timeElapsedPct.toFixed(1) + '%</b>' +
