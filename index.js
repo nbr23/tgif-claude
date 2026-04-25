@@ -121,14 +121,15 @@
 		var sm = parseInt(m[3], 10) || 0;
 		var ms = ((sd * 24 + sh) * 60 + sm) * 60 * 1000;
 		var resetAt = new Date(Date.now() + ms);
-		if (resetAt.getMinutes() >= 30) resetAt.setHours(resetAt.getHours() + 1);
-		resetAt.setMinutes(0, 0, 0);
+		resetAt.setMinutes(Math.round(resetAt.getMinutes() / 10) * 10, 0, 0);
 		var rh = resetAt.getHours();
+		var rmm = resetAt.getMinutes();
 		var rampm = rh >= 12 ? 'PM' : 'AM';
 		rh = rh % 12 || 12;
+		var rmmStr = (rmm < 10 ? '0' : '') + rmm;
 		var span = document.createElement('span');
 		span.id = 'tgif-claude-session';
-		span.textContent = ' (at ' + rh + ':00 ' + rampm + ')';
+		span.textContent = ' (at ' + rh + ':' + rmmStr + ' ' + rampm + ')';
 		sel.appendChild(span);
 	}
 
