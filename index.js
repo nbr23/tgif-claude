@@ -56,14 +56,14 @@
 	var lang = LANGS[htmlLang] || LANGS.en;
 
 	// Find the "Weekly limits" heading, then scope all searches to its container
-	var weeklyHeading = Array.from(document.querySelectorAll('h2')).find(function (h) {
+	var weeklyHeading = Array.from(document.querySelectorAll('h2, h3')).find(function (h) {
 		return h.textContent.trim() === lang.weeklyHeading;
 	});
-	var weeklySection = weeklyHeading && weeklyHeading.closest('.space-y-6');
+	var weeklySection = weeklyHeading && (weeklyHeading.closest('section') || weeklyHeading.closest('.space-y-6'));
 	if (!weeklySection) weeklySection = weeklyHeading && weeklyHeading.parentElement && weeklyHeading.parentElement.parentElement;
 	if (!weeklySection) { alert(lang.notFound); return; }
 
-	var weeklyPs = Array.from(weeklySection.querySelectorAll('p'));
+	var weeklyPs = Array.from(weeklySection.querySelectorAll('p, span'));
 
 	var resetEl = weeklyPs.find(function (p) {
 		return lang.detect.test(p.textContent.trim());
@@ -91,11 +91,11 @@
 
 	var row = resetEl.parentElement.parentElement;
 
-	var barContainer = row.querySelector('.bg-bg-000');
-	var fillEl = barContainer && barContainer.querySelector('.bg-accent-200');
+	var barContainer = row.querySelector('[role="progressbar"]') || row.querySelector('.bg-bg-000');
+	var fillEl = barContainer && (barContainer.querySelector('.bg-accent-200') || barContainer.querySelector('[style*="width"]') || barContainer.firstElementChild);
 	if (!fillEl) return;
 
-	var lastUpdatedEl = Array.from(document.querySelectorAll('p')).find(function (p) {
+	var lastUpdatedEl = Array.from(document.querySelectorAll('p, span')).find(function (p) {
 		return p.textContent.trim().startsWith(lang.lastUpdated);
 	});
 	var refreshBtn = document.querySelector('button[aria-label="' + lang.refreshLabel + '"]');
@@ -105,11 +105,11 @@
 	function updateSession() {
 		var existing = document.getElementById('tgif-claude-session');
 		if (existing) existing.remove();
-		var lel = Array.from(document.querySelectorAll('p')).find(function (p) {
+		var lel = Array.from(document.querySelectorAll('p, span')).find(function (p) {
 			return p.textContent.trim() === 'Current session';
 		});
 		var sel = lel && Array.from(
-			lel.parentElement.parentElement.querySelectorAll('p')
+			lel.parentElement.parentElement.querySelectorAll('p, span')
 		).find(function (p) {
 			return lang.relative.test(p.textContent.trim());
 		});
