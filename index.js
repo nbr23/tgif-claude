@@ -63,6 +63,17 @@
 	if (!weeklySection) weeklySection = weeklyHeading && weeklyHeading.parentElement && weeklyHeading.parentElement.parentElement;
 	if (!weeklySection) { alert(lang.notFound); return; }
 
+	var dialog = weeklySection.closest('[role="dialog"]');
+	if (dialog) {
+		dialog.style.maxWidth = 'none';
+		dialog.style.maxHeight = 'none';
+		dialog.style.width = '100vw';
+		dialog.style.height = '100vh';
+		dialog.style.inset = '0';
+		dialog.style.margin = '0';
+		dialog.style.borderRadius = '0';
+	}
+
 	var weeklyPs = Array.from(weeklySection.querySelectorAll('p, span'));
 
 	var resetEl = weeklyPs.find(function (p) {
