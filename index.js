@@ -18,6 +18,8 @@
 			dayNames:      ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
 			ampm:          true,
 			startsText:    'Starts when a message is sent',
+			wouldEndAt:    'would end at',
+			ifStartedNow:  'if started now',
 			lastUpdated:   'Last updated:',
 			refreshLabel:  'Refresh usage limits',
 			timeElapsed:   'Elapsed:',
@@ -39,6 +41,8 @@
 			dayNames:      ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'],
 			ampm:          false,
 			startsText:    'Commence quand un message est envoyé',
+			wouldEndAt:    'se terminerait à',
+			ifStartedNow:  'si démarrée maintenant',
 			lastUpdated:   'Dernière mise à jour :',
 			refreshLabel:  'Actualiser les limites d\'utilisation',
 			timeElapsed:   '\u00c9coul\u00e9\u00a0:',
@@ -112,6 +116,17 @@
 	var refreshBtn = document.querySelector('button[aria-label="' + lang.refreshLabel + '"]');
 
 	var WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+	var SESSION_MS = 5 * 60 * 60 * 1000;
+
+	function formatClockTime(date) {
+		var h = date.getHours();
+		var m = date.getMinutes();
+		var mm = (m < 10 ? '0' : '') + m;
+		if (lang.ampm) {
+			return (h % 12 || 12) + ':' + mm + (h >= 12 ? ' PM' : ' AM');
+		}
+		return h + ':' + mm;
+	}
 
 	function updateSession() {
 		var existing = document.getElementById('tgif-claude-session');
@@ -119,29 +134,37 @@
 		var lel = Array.from(document.querySelectorAll('p, span')).find(function (p) {
 			return p.textContent.trim() === 'Current session';
 		});
-		var sel = lel && Array.from(
-			lel.parentElement.parentElement.querySelectorAll('p, span')
-		).find(function (p) {
-			return lang.relative.test(p.textContent.trim());
-		});
-		if (!sel) return;
-		var m = sel.textContent.trim().match(lang.relParse);
-		if (!m) return;
-		var sd = parseInt(m[1], 10) || 0;
-		var sh = parseInt(m[2], 10) || 0;
-		var sm = parseInt(m[3], 10) || 0;
-		var ms = ((sd * 24 + sh) * 60 + sm) * 60 * 1000;
-		var resetAt = new Date(Date.now() + ms);
-		resetAt.setMinutes(Math.round(resetAt.getMinutes() / 10) * 10, 0, 0);
-		var rh = resetAt.getHours();
-		var rmm = resetAt.getMinutes();
-		var rampm = rh >= 12 ? 'PM' : 'AM';
-		rh = rh % 12 || 12;
-		var rmmStr = (rmm < 10 ? '0' : '') + rmm;
+		if (!lel) return;
+		var els = Array.from(lel.parentElement.parentElement.querySelectorAll('p, span'));
+
 		var span = document.createElement('span');
 		span.id = 'tgif-claude-session';
-		span.textContent = ' (at ' + rh + ':' + rmmStr + ' ' + rampm + ')';
-		sel.appendChild(span);
+
+		var sel = els.find(function (p) {
+			return lang.relative.test(p.textContent.trim());
+		});
+		if (sel) {
+			var m = sel.textContent.trim().match(lang.relParse);
+			if (!m) return;
+			var sd = parseInt(m[1], 10) || 0;
+			var sh = parseInt(m[2], 10) || 0;
+			var sm = parseInt(m[3], 10) || 0;
+			var ms = ((sd * 24 + sh) * 60 + sm) * 60 * 1000;
+			var resetAt = new Date(Date.now() + ms);
+			resetAt.setMinutes(Math.round(resetAt.getMinutes() / 10) * 10, 0, 0);
+			span.textContent = ' (at ' + formatClockTime(resetAt) + ')';
+			sel.appendChild(span);
+			return;
+		}
+
+		var startsEl = els.find(function (p) {
+			return p.textContent.trim() === lang.startsText;
+		});
+		if (!startsEl) return;
+		var endAt = new Date(Date.now() + SESSION_MS);
+		endAt.setMinutes(Math.round(endAt.getMinutes() / 10) * 10, 0, 0);
+		span.textContent = ' (' + lang.wouldEndAt + ' ' + formatClockTime(endAt) + ' ' + lang.ifStartedNow + ')';
+		startsEl.appendChild(span);
 	}
 
 	function updateWeeklyAt(msLeft) {
@@ -227,16 +250,7 @@
 	var weekStartMs = 0;
 
 	function formatTooltipTime(date) {
-		var day = lang.dayNames[date.getDay()];
-		var h = date.getHours();
-		var m = date.getMinutes();
-		var mm = (m < 10 ? '0' : '') + m;
-		if (lang.ampm) {
-			var suffix = h >= 12 ? ' PM' : ' AM';
-			h = h % 12 || 12;
-			return day + ' ' + h + ':' + mm + suffix;
-		}
-		return day + ' ' + h + ':' + mm;
+		return lang.dayNames[date.getDay()] + ' ' + formatClockTime(date);
 	}
 
 	barContainer.addEventListener('mousemove', function (e) {
