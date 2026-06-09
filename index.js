@@ -1,6 +1,6 @@
 (function () {
 	function run() {
-	['tgif-claude-marker', 'tgif-claude-label', 'tgif-claude-session', 'tgif-claude-weekly-at'].forEach(function (id) {
+	['tgif-claude-marker', 'tgif-claude-label', 'tgif-claude-session', 'tgif-claude-weekly-at', 'tgif-claude-weekly-starts'].forEach(function (id) {
 		var el = document.getElementById(id);
 		if (el) el.remove();
 	});
@@ -59,6 +59,9 @@
 
 	var lang = LANGS[htmlLang] || LANGS.en;
 
+	var WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+	var SESSION_MS = 5 * 60 * 60 * 1000;
+
 	// Find the "Weekly limits" heading, then scope all searches to its container
 	var weeklyHeading = Array.from(document.querySelectorAll('h2, h3')).find(function (h) {
 		return h.textContent.trim() === lang.weeklyHeading;
@@ -93,6 +96,11 @@
 			return p.textContent.trim() === lang.startsText;
 		});
 		if (startsEl) {
+			var weeklyEndAt = roundToHour(new Date(Date.now() + WEEK_MS));
+			var startsSpan = document.createElement('span');
+			startsSpan.id = 'tgif-claude-weekly-starts';
+			startsSpan.textContent = ' (' + lang.wouldEndAt + ' ' + formatTooltipTime(weeklyEndAt) + ' ' + lang.ifStartedNow + ')';
+			startsEl.appendChild(startsSpan);
 			var waitObserver = new MutationObserver(function () {
 				waitObserver.disconnect();
 				run();
@@ -115,9 +123,6 @@
 	});
 	var refreshBtn = document.querySelector('button[aria-label="' + lang.refreshLabel + '"]');
 
-	var WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-	var SESSION_MS = 5 * 60 * 60 * 1000;
-
 	function formatClockTime(date) {
 		var h = date.getHours();
 		var m = date.getMinutes();
@@ -126,6 +131,12 @@
 			return (h % 12 || 12) + ':' + mm + (h >= 12 ? ' PM' : ' AM');
 		}
 		return h + ':' + mm;
+	}
+
+	function roundToHour(date) {
+		if (date.getMinutes() >= 30) date.setHours(date.getHours() + 1);
+		date.setMinutes(0, 0, 0);
+		return date;
 	}
 
 	function updateSession() {
@@ -171,23 +182,10 @@
 		var existing = document.getElementById('tgif-claude-weekly-at');
 		if (existing) existing.remove();
 		if (!lang.relative.test(resetEl.textContent.trim())) return;
-		var resetAt = new Date(Date.now() + msLeft);
-		if (resetAt.getMinutes() >= 30) resetAt.setHours(resetAt.getHours() + 1);
-		resetAt.setMinutes(0, 0, 0);
-		var day = lang.dayNames[resetAt.getDay()];
-		var rh = resetAt.getHours();
-		var mm = '00';
-		var timeStr;
-		if (lang.ampm) {
-			var rampm = rh >= 12 ? 'PM' : 'AM';
-			rh = rh % 12 || 12;
-			timeStr = day + ' ' + rh + ':' + mm + ' ' + rampm;
-		} else {
-			timeStr = day + ' ' + rh + ':' + mm;
-		}
+		var resetAt = roundToHour(new Date(Date.now() + msLeft));
 		var span = document.createElement('span');
 		span.id = 'tgif-claude-weekly-at';
-		span.textContent = ' (at ' + timeStr + ')';
+		span.textContent = ' (at ' + formatTooltipTime(resetAt) + ')';
 		resetEl.appendChild(span);
 	}
 
