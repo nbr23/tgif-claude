@@ -21,7 +21,7 @@
 			wouldEndAt:    'would end at',
 			ifStartedNow:  'if started now',
 			lastUpdated:   'Last updated:',
-			refreshLabel:  'Refresh usage limits',
+			sessionText:   'Current session',
 			timeElapsed:   'Elapsed:',
 			resetsIn:      'Resets in',
 			overPace:      'over pace',
@@ -44,7 +44,7 @@
 			wouldEndAt:    'se terminerait à',
 			ifStartedNow:  'si démarrée maintenant',
 			lastUpdated:   'Dernière mise à jour :',
-			refreshLabel:  'Actualiser les limites d\'utilisation',
+			sessionText:   'Session actuelle',
 			timeElapsed:   '\u00c9coul\u00e9\u00a0:',
 			resetsIn:      'R\u00e9init. dans',
 			overPace:      'en avance',
@@ -61,6 +61,14 @@
 
 	var WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 	var SESSION_MS = 5 * 60 * 60 * 1000;
+	var BAR_SELECTOR = '[role="meter"], [role="progressbar"]';
+
+	// The row is whichever ancestor of the label also holds the usage bar
+	function findRow(el) {
+		var node = el.parentElement;
+		while (node && !node.querySelector(BAR_SELECTOR)) node = node.parentElement;
+		return node;
+	}
 
 	// Find the "Weekly limits" heading, then scope all searches to its container
 	var weeklyHeading = Array.from(document.querySelectorAll('h2, h3')).find(function (h) {
@@ -112,16 +120,13 @@
 		return;
 	}
 
-	var row = resetEl.parentElement.parentElement;
-
-	var barContainer = row.querySelector('[role="progressbar"]') || row.querySelector('.bg-bg-000');
-	var fillEl = barContainer && (barContainer.querySelector('.bg-accent-200') || barContainer.querySelector('[style*="width"]') || barContainer.firstElementChild);
-	if (!fillEl) return;
+	var row = findRow(resetEl);
+	var barContainer = row && row.querySelector(BAR_SELECTOR);
+	if (!barContainer) return;
 
 	var lastUpdatedEl = Array.from(document.querySelectorAll('p, span')).find(function (p) {
 		return p.textContent.trim().startsWith(lang.lastUpdated);
 	});
-	var refreshBtn = document.querySelector('button[aria-label="' + lang.refreshLabel + '"]');
 
 	function formatClockTime(date) {
 		var h = date.getHours();
@@ -139,14 +144,23 @@
 		return date;
 	}
 
+	function readUsagePct(bar) {
+		var valueNow = bar.getAttribute('aria-valuenow');
+		if (valueNow !== null && valueNow !== '') return parseFloat(valueNow) || 0;
+		var fill = bar.querySelector('[style*="width"]') || bar.firstElementChild;
+		return (fill && parseFloat(fill.style.width)) || 0;
+	}
+
 	function updateSession() {
 		var existing = document.getElementById('tgif-claude-session');
 		if (existing) existing.remove();
 		var lel = Array.from(document.querySelectorAll('p, span')).find(function (p) {
-			return p.textContent.trim() === 'Current session';
+			return p.textContent.trim() === lang.sessionText;
 		});
 		if (!lel) return;
-		var els = Array.from(lel.parentElement.parentElement.querySelectorAll('p, span'));
+		var sessionRow = findRow(lel);
+		if (!sessionRow) return;
+		var els = Array.from(sessionRow.querySelectorAll('p, span'));
 
 		var span = document.createElement('span');
 		span.id = 'tgif-claude-session';
@@ -271,11 +285,12 @@
 	var label = document.createElement('div');
 	label.id = 'tgif-claude-label';
 	label.className = resetEl.className;
-	label.style.marginTop = '4px';
-	row.insertAdjacentElement('afterend', label);
+	label.style.width = '100%';
+	label.style.whiteSpace = 'normal';
+	row.appendChild(label);
 
 	function update(reason) {
-		var usagePct = parseFloat(fillEl.style.width) || 0;
+		var usagePct = readUsagePct(barContainer);
 
 		var msLeft = parseMsLeft();
 		if (msLeft === null) {
