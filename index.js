@@ -294,6 +294,11 @@
 
 		var msLeft = parseMsLeft();
 		if (msLeft === null) {
+			if (resetEl.textContent.trim() === lang.startsText) {
+				if (observer) observer.disconnect();
+				run();
+				return;
+			}
 			label.textContent = lang.parseError;
 			return;
 		}
