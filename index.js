@@ -152,7 +152,7 @@
 
 	var CLAUDE_LANGS = {
 		en: {
-			detect:        /^Resets \w{3} \d{1,2}:\d{2} [AP]M$/,
+			detect:        /^Resets \w+ \d{1,2}:\d{2} [AP]M$/,
 			parse:         /Resets (\w+) (\d+):(\d+) ([AP]M)/,
 			relative:      /^Resets in /,
 			relParse:      /Resets in (?:(\d+)\s*d\s*)?(?:(\d+)\s*hr?\s*)?(?:(\d+)\s*min)?/,
@@ -173,6 +173,7 @@
 			parseError:    'tgif-claude: could not parse reset time',
 			notFound:      'tgif-claude: weekly reset text not found',
 			weeklyHeading: 'Weekly limits',
+			weeklyText:    'This week',
 		},
 		fr: {
 			detect:        /^Réinitialisation \w{3}\. \d{1,2}:\d{2}$/,
@@ -196,6 +197,7 @@
 			parseError:    'tgif-claude : impossible de lire l’heure de réinitialisation',
 			notFound:      'tgif-claude : texte de réinitialisation hebdomadaire introuvable',
 			weeklyHeading: 'Limites hebdomadaires',
+			weeklyText:    'Cette semaine',
 		},
 	};
 
@@ -212,11 +214,15 @@
 			return node;
 		}
 
-		var weeklyHeading = Array.from(document.querySelectorAll('h2, h3')).find(function (h) {
-			return h.textContent.trim() === lang.weeklyHeading;
-		});
-		var weeklySection = weeklyHeading && (weeklyHeading.closest('section') || weeklyHeading.closest('.space-y-6'));
-		if (!weeklySection) weeklySection = weeklyHeading && weeklyHeading.parentElement && weeklyHeading.parentElement.parentElement;
+		var weeklyLabel = findByText(document, lang.weeklyText);
+		var weeklySection = weeklyLabel && findRow(weeklyLabel);
+		if (!weeklySection) {
+			var weeklyHeading = Array.from(document.querySelectorAll('h2, h3')).find(function (h) {
+				return h.textContent.trim() === lang.weeklyHeading;
+			});
+			weeklySection = weeklyHeading && (weeklyHeading.closest('section') || weeklyHeading.closest('.space-y-6'));
+			if (!weeklySection) weeklySection = weeklyHeading && weeklyHeading.parentElement && weeklyHeading.parentElement.parentElement;
+		}
 		if (!weeklySection) { alert(lang.notFound); return; }
 
 		var dialog = weeklySection.closest('[role="dialog"]');
@@ -327,7 +333,8 @@
 
 			var abs = text.match(lang.parse);
 			if (abs) {
-				var targetDay = lang.days[abs[1]];
+				var targetDay = lang.days[abs[1].slice(0, 3)];
+				if (targetDay === undefined) return null;
 				var hour = parseInt(abs[2], 10);
 				var minute = parseInt(abs[3], 10);
 				if (lang.ampm) {
