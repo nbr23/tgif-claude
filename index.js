@@ -4,6 +4,7 @@
 	var DAY_MS = 24 * 60 * 60 * 1000;
 	var HOUR_MS = 60 * 60 * 1000;
 	var MIN_MS = 60 * 1000;
+	var TOOLTIP_TOLERANCE_MS = 2 * HOUR_MS;
 
 	function teardown() {
 		var prev = window.__tgif;
@@ -65,6 +66,97 @@
 		var h = parseInt(m[2], 10) || 0;
 		var mi = parseInt(m[3], 10) || 0;
 		return ((d * 24 + h) * 60 + mi) * MIN_MS;
+	}
+
+	function dispatchHover(el, entering) {
+		var types = entering
+			? ['pointerover', 'pointerenter', 'mouseover', 'mouseenter']
+			: ['pointerout', 'pointerleave', 'mouseout', 'mouseleave'];
+		types.forEach(function (type) {
+			var Ctor = (type.indexOf('pointer') === 0 && window.PointerEvent) || MouseEvent;
+			el.dispatchEvent(new Ctor(type, {
+				bubbles: /over|out/.test(type),
+				cancelable: true,
+				view: window,
+				relatedTarget: document.body,
+				pointerType: 'mouse',
+			}));
+		});
+	}
+
+	function tooltipFor(trigger) {
+		var id = trigger.getAttribute('popovertarget') || trigger.getAttribute('aria-describedby');
+		return id ? document.getElementById(id) : null;
+	}
+
+	function tooltipText(tip) {
+		return tip.textContent.replace(/\s+/g, ' ').trim();
+	}
+
+	function revealTooltip(trigger, tip) {
+		return new Promise(function (resolve) {
+			var focused = document.activeElement;
+			var settled = false;
+			var observer = new MutationObserver(function () {
+				if (tooltipText(tip)) finish();
+			});
+			function finish() {
+				if (settled) return;
+				settled = true;
+				observer.disconnect();
+				var text = tooltipText(tip);
+				dispatchHover(trigger, false);
+				try { tip.hidePopover(); } catch (e) {}
+				trigger.blur();
+				if (focused && focused !== document.body && focused.isConnected) {
+					focused.focus({ preventScroll: true });
+				}
+				tip.style.visibility = '';
+				resolve(text || null);
+			}
+			observer.observe(tip, { childList: true, subtree: true, characterData: true });
+			// Kept invisible while forced open so the user never sees the tooltip flash
+			tip.style.visibility = 'hidden';
+			dispatchHover(trigger, true);
+			trigger.focus({ preventScroll: true });
+			try { tip.showPopover(); } catch (e) {}
+			setTimeout(finish, 1500);
+		});
+	}
+
+	function parseTooltipTime(text, expectedMs, lang) {
+		var time = text.match(/(\d{1,2}):(\d{2})(?::\d{2})?(?:\s*([ap])\.?m\b\.?)?/i);
+		if (!time) return null;
+		var hour = parseInt(time[1], 10);
+		var minute = parseInt(time[2], 10);
+		var meridiem = (time[3] || '').toLowerCase();
+		if (meridiem === 'p' && hour !== 12) hour += 12;
+		if (meridiem === 'a' && hour === 12) hour = 0;
+
+		var rest = text.toLowerCase().replace(time[0].toLowerCase(), ' ');
+		var md = rest.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})\b/);
+		var dm = rest.match(/\b(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*/);
+		var wd = rest.match(lang.weekday);
+
+		var expected = new Date(expectedMs);
+		var candidates = [];
+		if (md || dm) {
+			var month = lang.months[md ? md[1] : dm[2]];
+			var day = parseInt(md ? md[2] : dm[1], 10);
+			[-1, 0, 1].forEach(function (dy) {
+				candidates.push(new Date(expected.getFullYear() + dy, month, day, hour, minute));
+			});
+		} else {
+			var weekday = wd ? lang.days[wd[1]] : -1;
+			for (var offset = -8; offset <= 8; offset++) {
+				var c = new Date(expected.getFullYear(), expected.getMonth(), expected.getDate() + offset, hour, minute);
+				if (weekday < 0 || c.getDay() === weekday) candidates.push(c);
+			}
+		}
+		var best = candidates.reduce(function (a, b) {
+			return Math.abs(b - expectedMs) < Math.abs(a - expectedMs) ? b : a;
+		});
+		return Math.abs(best - expectedMs) <= TOOLTIP_TOLERANCE_MS ? best.getTime() : null;
 	}
 
 	function textNodes(root) {
@@ -406,6 +498,10 @@
 		relative:     /^Resets in\b/,
 		relParse:     /Resets in\s*(?:(\d+)\s*d\s*)?(?:(\d+)\s*h\s*)?(?:(\d+)\s*m)?/,
 		pctLeft:      /^(\d+(?:\.\d+)?)%\s+left$/,
+		resetsPrefix: /^resets\s+(?:on|at)?\s*/i,
+		weekday:      /\b(sun|mon|tue|wed|thu|fri|sat)(?:[a-z]*day|s|rs)?\b/,
+		days:         { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 },
+		months:       { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 },
 		dayNames:     ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
 		ampm:         true,
 		planLimits:   'Plan limits',
@@ -476,10 +572,16 @@
 			return fill ? 100 - parseFloat(fill.style.width) : 0;
 		}
 
+		function findResetButton(row) {
+			return Array.from(row.querySelectorAll('button[aria-label]')).find(function (button) {
+				return lang.relative.test(button.getAttribute('aria-label').trim());
+			}) || null;
+		}
+
 		function readMsLeft(row) {
-			var button = row.querySelector('button[aria-label]');
-			var text = button && lang.relative.test(button.getAttribute('aria-label').trim())
-				? button.getAttribute('aria-label').trim()
+			var button = findResetButton(row);
+			var text = button
+				? button.getAttribute('aria-label')
 				: (textNodes(row).find(function (el) {
 					return lang.relative.test(el.textContent.trim());
 				}) || {}).textContent;
@@ -513,31 +615,64 @@
 			var ctx = {
 				row: row, bar: bar, marker: marker, label: label,
 				windowMs: windowMs, weekly: weekly, hoverState: null,
+				reset: null, lastRelMs: null, probing: false, probes: 0,
 			};
 			attachHoverTooltip(bar, function () { return ctx.hoverState; }, lang);
 			return ctx;
 		}
 
+		function makeReset(text, relMs) {
+			return {
+				text: text.replace(lang.resetsPrefix, ''),
+				at: parseTooltipTime(text, Date.now() + relMs, lang),
+			};
+		}
+
+		var probeQueue = Promise.resolve();
+
+		function captureReset(ctx, relMs, allowProbe) {
+			var button = findResetButton(ctx.row);
+			var tip = button && tooltipFor(button);
+			if (!tip) return;
+			var visible = tooltipText(tip);
+			if (visible) { ctx.reset = makeReset(visible, relMs); return; }
+			if (!allowProbe || ctx.probing || ctx.probes >= 3) return;
+			ctx.probing = true;
+			probeQueue = probeQueue.then(function () {
+				return revealTooltip(button, tip);
+			}).then(function (text) {
+				ctx.probing = false;
+				ctx.probes++;
+				var current = readMsLeft(ctx.row);
+				if (!text || current === null) return;
+				ctx.reset = makeReset(text, current);
+				update(false);
+			});
+		}
+
 		function annotateResetAt(ctx, msLeft) {
-			var button = ctx.row.querySelector('button[aria-label]');
+			var button = findResetButton(ctx.row);
 			var anchor = button ? button.parentElement : null;
 			if (!anchor) return;
 			var span = document.createElement('span');
 			span.dataset.tgif = 'reset-at';
-			var at = ctx.weekly
+			var at = ctx.reset ? ctx.reset.text : 'at ' + (ctx.weekly
 				? formatTooltipTime(lang, roundToHour(new Date(Date.now() + msLeft)))
-				: formatClockTime(lang, roundToTenMinutes(new Date(Date.now() + msLeft)));
-			span.textContent = ' (at ' + at + ')';
+				: formatClockTime(lang, roundToTenMinutes(new Date(Date.now() + msLeft))));
+			span.textContent = ' (' + at + ')';
 			anchor.appendChild(span);
 		}
 
-		function updateCtx(ctx) {
+		function updateCtx(ctx, allowProbe) {
 			Array.from(ctx.row.querySelectorAll('[data-tgif="reset-at"]')).forEach(function (el) {
 				el.remove();
 			});
 
-			var msLeft = readMsLeft(ctx.row);
-			if (msLeft === null) {
+			var relMs = readMsLeft(ctx.row);
+			if (relMs === null) {
+				ctx.reset = null;
+				ctx.lastRelMs = null;
+				ctx.probes = 0;
 				ctx.marker.style.display = 'none';
 				ctx.hoverState = null;
 				var endAt = ctx.weekly
@@ -546,6 +681,17 @@
 				ctx.label.textContent = lang.wouldEndAt + ' ' + endAt + ' ' + lang.ifStartedNow;
 				return;
 			}
+
+			if (ctx.lastRelMs !== null && relMs > ctx.lastRelMs) {
+				ctx.reset = null;
+				ctx.probes = 0;
+			}
+			ctx.lastRelMs = relMs;
+			if (!ctx.reset) captureReset(ctx, relMs, allowProbe);
+
+			var msLeft = ctx.reset && ctx.reset.at !== null
+				? Math.max(0, ctx.reset.at - Date.now())
+				: relMs;
 
 			ctx.marker.style.display = '';
 			annotateResetAt(ctx, msLeft);
@@ -566,20 +712,20 @@
 
 		var observer = null;
 
-		function update() {
+		function update(allowProbe) {
 			if (observer) observer.disconnect();
-			contexts.forEach(updateCtx);
+			contexts.forEach(function (ctx) { updateCtx(ctx, allowProbe); });
 			if (observer && card) {
 				observer.observe(card, { childList: true, subtree: true, characterData: true });
 			}
 		}
 
-		update();
+		update(true);
 
 		// ChatGPT exposes no "Last updated" node, so the countdown has to self-tick
-		track('intervals', setInterval(update, 30000));
+		track('intervals', setInterval(function () { update(true); }, 30000));
 		if (card) {
-			observer = track('observers', new MutationObserver(update));
+			observer = track('observers', new MutationObserver(function () { update(false); }));
 			observer.observe(card, { childList: true, subtree: true, characterData: true });
 		}
 	}
