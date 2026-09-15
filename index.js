@@ -498,6 +498,7 @@
 		relative:     /^Resets in\b/,
 		relParse:     /Resets in\s*(?:(\d+)\s*d\s*)?(?:(\d+)\s*h\s*)?(?:(\d+)\s*m)?/,
 		pctLeft:      /^(\d+(?:\.\d+)?)%\s+left$/,
+		creditsLeft:  /^(\d+(?:,\d{3})*(?:\.\d+)?)\s+credits?\s+left$/,
 		resetsPrefix: /^resets\s+(?:on|at)?\s*/i,
 		weekday:      /\b(sun|mon|tue|wed|thu|fri|sat)(?:[a-z]*day|s|rs)?\b/,
 		days:         { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 },
@@ -518,6 +519,7 @@
 
 	function runChatgpt() {
 		var lang = CHATGPT_LANG;
+		var CREDITS_PER_USD = 2500 / 100;
 
 		function findFill(root) {
 			return Array.from(root.querySelectorAll('[style*="width"]')).find(function (el) {
@@ -711,12 +713,31 @@
 		if (!contexts.length) { alert(lang.notFound); return; }
 
 		var observer = null;
+		var observedRoot = panel || card;
+
+		function annotateCredits() {
+			var root = panel || document;
+			Array.from(root.querySelectorAll('[data-tgif="credit-value"]')).forEach(function (el) {
+				el.remove();
+			});
+			textNodes(root).forEach(function (el) {
+				if (el.children.length) return;
+				var match = el.textContent.trim().match(lang.creditsLeft);
+				if (!match) return;
+				var credits = parseFloat(match[1].replace(/,/g, ''));
+				var span = document.createElement('span');
+				span.dataset.tgif = 'credit-value';
+				span.textContent = ' ($' + (credits / CREDITS_PER_USD).toFixed(2) + ')';
+				el.appendChild(span);
+			});
+		}
 
 		function update(allowProbe) {
 			if (observer) observer.disconnect();
+			annotateCredits();
 			contexts.forEach(function (ctx) { updateCtx(ctx, allowProbe); });
-			if (observer && card) {
-				observer.observe(card, { childList: true, subtree: true, characterData: true });
+			if (observer && observedRoot) {
+				observer.observe(observedRoot, { childList: true, subtree: true, characterData: true });
 			}
 		}
 
@@ -724,9 +745,9 @@
 
 		// ChatGPT exposes no "Last updated" node, so the countdown has to self-tick
 		track('intervals', setInterval(function () { update(true); }, 30000));
-		if (card) {
+		if (observedRoot) {
 			observer = track('observers', new MutationObserver(function () { update(false); }));
-			observer.observe(card, { childList: true, subtree: true, characterData: true });
+			observer.observe(observedRoot, { childList: true, subtree: true, characterData: true });
 		}
 	}
 
