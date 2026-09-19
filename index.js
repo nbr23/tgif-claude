@@ -68,62 +68,6 @@
 		return ((d * 24 + h) * 60 + mi) * MIN_MS;
 	}
 
-	function dispatchHover(el, entering) {
-		var types = entering
-			? ['pointerover', 'pointerenter', 'mouseover', 'mouseenter']
-			: ['pointerout', 'pointerleave', 'mouseout', 'mouseleave'];
-		types.forEach(function (type) {
-			var Ctor = (type.indexOf('pointer') === 0 && window.PointerEvent) || MouseEvent;
-			el.dispatchEvent(new Ctor(type, {
-				bubbles: /over|out/.test(type),
-				cancelable: true,
-				view: window,
-				relatedTarget: document.body,
-				pointerType: 'mouse',
-			}));
-		});
-	}
-
-	function tooltipFor(trigger) {
-		var id = trigger.getAttribute('popovertarget') || trigger.getAttribute('aria-describedby');
-		return id ? document.getElementById(id) : null;
-	}
-
-	function tooltipText(tip) {
-		return tip.textContent.replace(/\s+/g, ' ').trim();
-	}
-
-	function revealTooltip(trigger, tip) {
-		return new Promise(function (resolve) {
-			var focused = document.activeElement;
-			var settled = false;
-			var observer = new MutationObserver(function () {
-				if (tooltipText(tip)) finish();
-			});
-			function finish() {
-				if (settled) return;
-				settled = true;
-				observer.disconnect();
-				var text = tooltipText(tip);
-				dispatchHover(trigger, false);
-				try { tip.hidePopover(); } catch (e) {}
-				trigger.blur();
-				if (focused && focused !== document.body && focused.isConnected) {
-					focused.focus({ preventScroll: true });
-				}
-				tip.style.visibility = '';
-				resolve(text || null);
-			}
-			observer.observe(tip, { childList: true, subtree: true, characterData: true });
-			// Kept invisible while forced open so the user never sees the tooltip flash
-			tip.style.visibility = 'hidden';
-			dispatchHover(trigger, true);
-			trigger.focus({ preventScroll: true });
-			try { tip.showPopover(); } catch (e) {}
-			setTimeout(finish, 1500);
-		});
-	}
-
 	function parseTooltipTime(text, expectedMs, lang) {
 		var time = text.match(/(\d{1,2}):(\d{2})(?::\d{2})?(?:\s*([ap])\.?m\b\.?)?/i);
 		if (!time) return null;
@@ -498,14 +442,12 @@
 		relative:     /^Resets in\b/,
 		relParse:     /Resets in\s*(?:(\d+)\s*d\s*)?(?:(\d+)\s*h\s*)?(?:(\d+)\s*m)?/,
 		pctLeft:      /^(\d+(?:\.\d+)?)%\s+left$/,
-		creditsLeft:  /^(\d+(?:,\d{3})*(?:\.\d+)?)\s+credits?\s+left$/,
-		resetsPrefix: /^resets\s+(?:on|at)?\s*/i,
+		creditsLeft:  /^(\d+(?:,\d{3})*(?:\.\d+)?)\s+credits?\s+(?:left|remaining)$/,
 		weekday:      /\b(sun|mon|tue|wed|thu|fri|sat)(?:[a-z]*day|s|rs)?\b/,
 		days:         { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 },
 		months:       { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 },
 		dayNames:     ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
 		ampm:         true,
-		planLimits:   'Plan limits',
 		sessionText:  '5-hour limit',
 		weeklyText:   'Weekly limit',
 		wouldEndAt:   'would end at',
@@ -521,15 +463,11 @@
 		var lang = CHATGPT_LANG;
 		var CREDITS_PER_USD = 2500 / 100;
 
-		function findFill(root) {
-			return Array.from(root.querySelectorAll('[style*="width"]')).find(function (el) {
-				return /%$/.test((el.style.width || '').trim());
-			});
-		}
-
+		// Children appended inside <progress> are fallback content and never render,
+		// so the wrapper div around it hosts the marker
 		function findBar(root) {
-			var fill = findFill(root);
-			return fill && fill.parentElement;
+			var progress = root.querySelector('progress');
+			return progress && progress.parentElement;
 		}
 
 		function findRow(el) {
@@ -538,19 +476,7 @@
 			return node;
 		}
 
-		function unclamp(from, upTo) {
-			var node = from;
-			while (node) {
-				var computed = getComputedStyle(node);
-				if (computed.maxWidth !== 'none') node.style.maxWidth = 'none';
-				if (computed.maxHeight !== 'none') node.style.maxHeight = 'none';
-				if (node === upTo) break;
-				node = node.parentElement;
-			}
-		}
-
-		var panel = document.querySelector('[role="tabpanel"][aria-labelledby$="trigger-Usage"]:not([hidden])');
-		var planLimitsEl = findByText(panel || document, lang.planLimits);
+		var panel = document.getElementById('usage-panel-usage');
 		var sessionLabel = findByText(panel || document, lang.sessionText);
 		var weeklyLabel = findByText(panel || document, lang.weeklyText);
 		if (!sessionLabel && !weeklyLabel) { alert(lang.notFound); return; }
@@ -558,36 +484,24 @@
 		var card = findRow(sessionLabel || weeklyLabel);
 		if (card) card = card.parentElement;
 
-		var dialog = (planLimitsEl || sessionLabel || weeklyLabel).closest('[role="dialog"]');
-		if (dialog) {
-			dialog.style.cssText += ';position:fixed;inset:0;margin:0;width:100vw;height:100vh;' +
-				'max-width:none;max-height:none;border-radius:0;transform:none;translate:none;';
-			unclamp(card || panel, dialog);
-		}
-
 		function readUsagePct(row, bar) {
 			var pctEl = textNodes(row).find(function (el) {
 				return lang.pctLeft.test(el.textContent.trim());
 			});
 			if (pctEl) return 100 - parseFloat(pctEl.textContent.trim().match(lang.pctLeft)[1]);
-			var fill = bar && findFill(bar);
-			return fill ? 100 - parseFloat(fill.style.width) : 0;
+			var progress = bar && bar.querySelector('progress');
+			return progress ? 100 - (progress.value / (progress.max || 100)) * 100 : 0;
 		}
 
-		function findResetButton(row) {
-			return Array.from(row.querySelectorAll('button[aria-label]')).find(function (button) {
-				return lang.relative.test(button.getAttribute('aria-label').trim());
+		function findResetEl(row) {
+			return textNodes(row).find(function (el) {
+				return !el.children.length && lang.relative.test(el.textContent.trim());
 			}) || null;
 		}
 
 		function readMsLeft(row) {
-			var button = findResetButton(row);
-			var text = button
-				? button.getAttribute('aria-label')
-				: (textNodes(row).find(function (el) {
-					return lang.relative.test(el.textContent.trim());
-				}) || {}).textContent;
-			return text ? parseRelative(text.trim(), lang.relParse) : null;
+			var resetEl = findResetEl(row);
+			return resetEl ? parseRelative(resetEl.textContent.trim(), lang.relParse) : null;
 		}
 
 		function setup(labelEl, windowMs, weekly) {
@@ -617,64 +531,44 @@
 			var ctx = {
 				row: row, bar: bar, marker: marker, label: label,
 				windowMs: windowMs, weekly: weekly, hoverState: null,
-				reset: null, lastRelMs: null, probing: false, probes: 0,
+				resetAt: null, lastRelMs: null,
 			};
 			attachHoverTooltip(bar, function () { return ctx.hoverState; }, lang);
 			return ctx;
 		}
 
-		function makeReset(text, relMs) {
-			return {
-				text: text.replace(lang.resetsPrefix, ''),
-				at: parseTooltipTime(text, Date.now() + relMs, lang),
-			};
+		function captureResetAt(ctx, relMs) {
+			var resetEl = findResetEl(ctx.row);
+			var title = resetEl && resetEl.getAttribute('title');
+			return title ? parseTooltipTime(title, Date.now() + relMs, lang) : null;
 		}
 
-		var probeQueue = Promise.resolve();
-
-		function captureReset(ctx, relMs, allowProbe) {
-			var button = findResetButton(ctx.row);
-			var tip = button && tooltipFor(button);
-			if (!tip) return;
-			var visible = tooltipText(tip);
-			if (visible) { ctx.reset = makeReset(visible, relMs); return; }
-			if (!allowProbe || ctx.probing || ctx.probes >= 3) return;
-			ctx.probing = true;
-			probeQueue = probeQueue.then(function () {
-				return revealTooltip(button, tip);
-			}).then(function (text) {
-				ctx.probing = false;
-				ctx.probes++;
-				var current = readMsLeft(ctx.row);
-				if (!text || current === null) return;
-				ctx.reset = makeReset(text, current);
-				update(false);
-			});
+		function formatResetAt(ctx, date) {
+			return ctx.weekly ? formatTooltipTime(lang, date) : formatClockTime(lang, date);
 		}
 
 		function annotateResetAt(ctx, msLeft) {
-			var button = findResetButton(ctx.row);
-			var anchor = button ? button.parentElement : null;
+			var resetEl = findResetEl(ctx.row);
+			var anchor = resetEl ? resetEl.parentElement : null;
 			if (!anchor) return;
 			var span = document.createElement('span');
 			span.dataset.tgif = 'reset-at';
-			var at = ctx.reset ? ctx.reset.text : 'at ' + (ctx.weekly
-				? formatTooltipTime(lang, roundToHour(new Date(Date.now() + msLeft)))
-				: formatClockTime(lang, roundToTenMinutes(new Date(Date.now() + msLeft))));
-			span.textContent = ' (' + at + ')';
+			var at = ctx.resetAt !== null
+				? new Date(ctx.resetAt)
+				: (ctx.weekly ? roundToHour : roundToTenMinutes)(new Date(Date.now() + msLeft));
+			span.textContent = ' (at ' + formatResetAt(ctx, at) + ')';
 			anchor.appendChild(span);
 		}
 
-		function updateCtx(ctx, allowProbe) {
+		function updateCtx(ctx) {
 			Array.from(ctx.row.querySelectorAll('[data-tgif="reset-at"]')).forEach(function (el) {
 				el.remove();
 			});
 
 			var relMs = readMsLeft(ctx.row);
 			if (relMs === null) {
-				ctx.reset = null;
+				ctx.resetAt = null;
 				ctx.lastRelMs = null;
-				ctx.probes = 0;
 				ctx.marker.style.display = 'none';
 				ctx.hoverState = null;
 				var endAt = ctx.weekly
@@ -684,16 +578,11 @@
 				return;
 			}
 
-			if (ctx.lastRelMs !== null && relMs > ctx.lastRelMs) {
-				ctx.reset = null;
-				ctx.probes = 0;
-			}
+			if (ctx.lastRelMs !== null && relMs > ctx.lastRelMs) ctx.resetAt = null;
 			ctx.lastRelMs = relMs;
-			if (!ctx.reset) captureReset(ctx, relMs, allowProbe);
+			if (ctx.resetAt === null) ctx.resetAt = captureResetAt(ctx, relMs);
 
-			var msLeft = ctx.reset && ctx.reset.at !== null
-				? Math.max(0, ctx.reset.at - Date.now())
-				: relMs;
+			var msLeft = ctx.resetAt !== null ? Math.max(0, ctx.resetAt - Date.now()) : relMs;
 
 			ctx.marker.style.display = '';
 			annotateResetAt(ctx, msLeft);
@@ -732,21 +621,21 @@
 			});
 		}
 
-		function update(allowProbe) {
+		function update() {
 			if (observer) observer.disconnect();
 			annotateCredits();
-			contexts.forEach(function (ctx) { updateCtx(ctx, allowProbe); });
+			contexts.forEach(updateCtx);
 			if (observer && observedRoot) {
 				observer.observe(observedRoot, { childList: true, subtree: true, characterData: true });
 			}
 		}
 
-		update(true);
+		update();
 
 		// ChatGPT exposes no "Last updated" node, so the countdown has to self-tick
-		track('intervals', setInterval(function () { update(true); }, 30000));
+		track('intervals', setInterval(update, 30000));
 		if (observedRoot) {
-			observer = track('observers', new MutationObserver(function () { update(false); }));
+			observer = track('observers', new MutationObserver(update));
 			observer.observe(observedRoot, { childList: true, subtree: true, characterData: true });
 		}
 	}
@@ -758,7 +647,7 @@
 		runClaude();
 	} else if (/(^|\.)(chatgpt\.com|openai\.com)$/.test(host)) {
 		runChatgpt();
-	} else if (document.getElementById('modal-settings')) {
+	} else if (document.getElementById('usage-panel-usage')) {
 		runChatgpt();
 	} else {
 		runClaude();
