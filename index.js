@@ -68,6 +68,62 @@
 		return ((d * 24 + h) * 60 + mi) * MIN_MS;
 	}
 
+	function dispatchHover(el, entering) {
+		var types = entering
+			? ['pointerover', 'pointerenter', 'mouseover', 'mouseenter']
+			: ['pointerout', 'pointerleave', 'mouseout', 'mouseleave'];
+		types.forEach(function (type) {
+			var Ctor = (type.indexOf('pointer') === 0 && window.PointerEvent) || MouseEvent;
+			el.dispatchEvent(new Ctor(type, {
+				bubbles: /over|out/.test(type),
+				cancelable: true,
+				view: window,
+				relatedTarget: document.body,
+				pointerType: 'mouse',
+			}));
+		});
+	}
+
+	function tooltipFor(trigger) {
+		var id = trigger.getAttribute('popovertarget') || trigger.getAttribute('aria-describedby');
+		return id ? document.getElementById(id) : null;
+	}
+
+	function tooltipText(tip) {
+		return tip.textContent.replace(/\s+/g, ' ').trim();
+	}
+
+	function revealTooltip(trigger, tip) {
+		return new Promise(function (resolve) {
+			var focused = document.activeElement;
+			var settled = false;
+			var observer = new MutationObserver(function () {
+				if (tooltipText(tip)) finish();
+			});
+			function finish() {
+				if (settled) return;
+				settled = true;
+				observer.disconnect();
+				var text = tooltipText(tip);
+				dispatchHover(trigger, false);
+				try { tip.hidePopover(); } catch (e) {}
+				trigger.blur();
+				if (focused && focused !== document.body && focused.isConnected) {
+					focused.focus({ preventScroll: true });
+				}
+				tip.style.visibility = '';
+				resolve(text || null);
+			}
+			observer.observe(tip, { childList: true, subtree: true, characterData: true });
+			// Kept invisible while forced open so the user never sees the tooltip flash
+			tip.style.visibility = 'hidden';
+			dispatchHover(trigger, true);
+			trigger.focus({ preventScroll: true });
+			try { tip.showPopover(); } catch (e) {}
+			setTimeout(finish, 1500);
+		});
+	}
+
 	function parseTooltipTime(text, expectedMs, lang) {
 		var time = text.match(/(\d{1,2}):(\d{2})(?::\d{2})?(?:\s*([ap])\.?m\b\.?)?/i);
 		if (!time) return null;
@@ -195,7 +251,7 @@
 			days:          { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 },
 			dayNames:      ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
 			ampm:          true,
-			startsText:    'Starts when a message is sent',
+			startsText:    /^Starts (?:when a message is sent|with your first message)$/,
 			wouldEndAt:    'would end at',
 			ifStartedNow:  'if started now',
 			lastUpdated:   'Last updated:',
@@ -219,7 +275,7 @@
 			days:          { dim: 0, lun: 1, mar: 2, mer: 3, jeu: 4, ven: 5, sam: 6 },
 			dayNames:      ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam'],
 			ampm:          false,
-			startsText:    'Commence quand un message est envoyé',
+			startsText:    /^Commence quand un message est envoyé$/,
 			wouldEndAt:    'se terminerait à',
 			ifStartedNow:  'si démarrée maintenant',
 			lastUpdated:   'Dernière mise à jour :',
@@ -284,7 +340,7 @@
 		}
 		if (!resetEl) {
 			var startsEl = weeklyPs.find(function (p) {
-				return p.textContent.trim() === lang.startsText;
+				return lang.startsText.test(p.textContent.trim());
 			});
 			if (startsEl) {
 				var weeklyEndAt = roundToHour(new Date(Date.now() + WEEK_MS));
@@ -345,7 +401,7 @@
 			}
 
 			var startsEl = els.find(function (p) {
-				return p.textContent.trim() === lang.startsText;
+				return lang.startsText.test(p.textContent.trim());
 			});
 			if (!startsEl) return;
 			var endAt = roundToTenMinutes(new Date(Date.now() + SESSION_MS));
@@ -410,7 +466,7 @@
 
 			var msLeft = parseMsLeft();
 			if (msLeft === null) {
-				if (resetEl.textContent.trim() === lang.startsText) {
+				if (lang.startsText.test(resetEl.textContent.trim())) {
 					teardown();
 					runClaude();
 					return;
@@ -443,11 +499,13 @@
 		relParse:     /Resets in\s*(?:(\d+)\s*d\s*)?(?:(\d+)\s*h\s*)?(?:(\d+)\s*m)?/,
 		pctLeft:      /^(\d+(?:\.\d+)?)%\s+left$/,
 		creditsLeft:  /^(\d+(?:,\d{3})*(?:\.\d+)?)\s+credits?\s+(?:left|remaining)$/,
+		resetsPrefix: /^resets\s+(?:on|at)?\s*/i,
 		weekday:      /\b(sun|mon|tue|wed|thu|fri|sat)(?:[a-z]*day|s|rs)?\b/,
 		days:         { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 },
 		months:       { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 },
 		dayNames:     ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
 		ampm:         true,
+		planLimits:   'Plan limits',
 		sessionText:  '5-hour limit',
 		weeklyText:   'Weekly limit',
 		wouldEndAt:   'would end at',
@@ -463,11 +521,19 @@
 		var lang = CHATGPT_LANG;
 		var CREDITS_PER_USD = 2500 / 100;
 
+		function findFill(root) {
+			return Array.from(root.querySelectorAll('[style*="width"]')).find(function (el) {
+				return /%$/.test((el.style.width || '').trim());
+			});
+		}
+
 		// Children appended inside <progress> are fallback content and never render,
-		// so the wrapper div around it hosts the marker
+		// so its wrapper div hosts the marker instead
 		function findBar(root) {
 			var progress = root.querySelector('progress');
-			return progress && progress.parentElement;
+			if (progress) return progress.parentElement;
+			var fill = findFill(root);
+			return fill ? fill.parentElement : null;
 		}
 
 		function findRow(el) {
@@ -476,7 +542,20 @@
 			return node;
 		}
 
-		var panel = document.getElementById('usage-panel-usage');
+		function unclamp(from, upTo) {
+			var node = from;
+			while (node) {
+				var computed = getComputedStyle(node);
+				if (computed.maxWidth !== 'none') node.style.maxWidth = 'none';
+				if (computed.maxHeight !== 'none') node.style.maxHeight = 'none';
+				if (node === upTo) break;
+				node = node.parentElement;
+			}
+		}
+
+		var panel = document.getElementById('usage-panel-usage') ||
+			document.querySelector('[role="tabpanel"][aria-labelledby$="trigger-Usage"]:not([hidden])');
+		var planLimitsEl = findByText(panel || document, lang.planLimits);
 		var sessionLabel = findByText(panel || document, lang.sessionText);
 		var weeklyLabel = findByText(panel || document, lang.weeklyText);
 		if (!sessionLabel && !weeklyLabel) { alert(lang.notFound); return; }
@@ -484,24 +563,43 @@
 		var card = findRow(sessionLabel || weeklyLabel);
 		if (card) card = card.parentElement;
 
+		var dialog = (planLimitsEl || sessionLabel || weeklyLabel).closest('[role="dialog"]');
+		if (dialog) {
+			dialog.style.cssText += ';position:fixed;inset:0;margin:0;width:100vw;height:100vh;' +
+				'max-width:none;max-height:none;border-radius:0;transform:none;translate:none;';
+			unclamp(card || panel, dialog);
+		}
+
 		function readUsagePct(row, bar) {
 			var pctEl = textNodes(row).find(function (el) {
 				return lang.pctLeft.test(el.textContent.trim());
 			});
 			if (pctEl) return 100 - parseFloat(pctEl.textContent.trim().match(lang.pctLeft)[1]);
 			var progress = bar && bar.querySelector('progress');
-			return progress ? 100 - (progress.value / (progress.max || 100)) * 100 : 0;
+			if (progress) return 100 - (progress.value / (progress.max || 100)) * 100;
+			var fill = bar && findFill(bar);
+			return fill ? 100 - parseFloat(fill.style.width) : 0;
 		}
 
+		// Dialog layout: a button whose aria-label carries the countdown and whose popover holds the exact time.
+		// Full-page layout: a leaf span with the countdown as text and the exact time in its title.
 		function findResetEl(row) {
-			return textNodes(row).find(function (el) {
+			var button = Array.from(row.querySelectorAll('button[aria-label]')).find(function (el) {
+				return lang.relative.test(el.getAttribute('aria-label').trim());
+			});
+			if (button) {
+				return { el: button, text: button.getAttribute('aria-label').trim(), title: null, tip: tooltipFor(button) };
+			}
+			var span = textNodes(row).find(function (el) {
 				return !el.children.length && lang.relative.test(el.textContent.trim());
-			}) || null;
+			});
+			if (!span) return null;
+			return { el: span, text: span.textContent.trim(), title: span.getAttribute('title'), tip: null };
 		}
 
 		function readMsLeft(row) {
-			var resetEl = findResetEl(row);
-			return resetEl ? parseRelative(resetEl.textContent.trim(), lang.relParse) : null;
+			var reset = findResetEl(row);
+			return reset ? parseRelative(reset.text, lang.relParse) : null;
 		}
 
 		function setup(labelEl, windowMs, weekly) {
@@ -531,16 +629,44 @@
 			var ctx = {
 				row: row, bar: bar, marker: marker, label: label,
 				windowMs: windowMs, weekly: weekly, hoverState: null,
-				resetAt: null, lastRelMs: null,
+				reset: null, lastRelMs: null, probing: false, probes: 0,
 			};
 			attachHoverTooltip(bar, function () { return ctx.hoverState; }, lang);
 			return ctx;
 		}
 
-		function captureResetAt(ctx, relMs) {
-			var resetEl = findResetEl(ctx.row);
-			var title = resetEl && resetEl.getAttribute('title');
-			return title ? parseTooltipTime(title, Date.now() + relMs, lang) : null;
+		function makeReset(text, relMs) {
+			return {
+				text: text.replace(lang.resetsPrefix, ''),
+				at: parseTooltipTime(text, Date.now() + relMs, lang),
+			};
+		}
+
+		var probeQueue = Promise.resolve();
+
+		function captureReset(ctx, relMs, allowProbe) {
+			var reset = findResetEl(ctx.row);
+			if (!reset) return;
+			if (reset.title) {
+				ctx.reset = { text: null, at: parseTooltipTime(reset.title, Date.now() + relMs, lang) };
+				return;
+			}
+			var tip = reset.tip;
+			if (!tip) return;
+			var visible = tooltipText(tip);
+			if (visible) { ctx.reset = makeReset(visible, relMs); return; }
+			if (!allowProbe || ctx.probing || ctx.probes >= 3) return;
+			ctx.probing = true;
+			probeQueue = probeQueue.then(function () {
+				return revealTooltip(reset.el, tip);
+			}).then(function (text) {
+				ctx.probing = false;
+				ctx.probes++;
+				var current = readMsLeft(ctx.row);
+				if (!text || current === null) return;
+				ctx.reset = makeReset(text, current);
+				update(false);
+			});
 		}
 
 		function formatResetAt(ctx, date) {
@@ -548,27 +674,34 @@
 		}
 
 		function annotateResetAt(ctx, msLeft) {
-			var resetEl = findResetEl(ctx.row);
-			var anchor = resetEl ? resetEl.parentElement : null;
+			var reset = findResetEl(ctx.row);
+			var anchor = reset ? reset.el.parentElement : null;
 			if (!anchor) return;
 			var span = document.createElement('span');
 			span.dataset.tgif = 'reset-at';
-			var at = ctx.resetAt !== null
-				? new Date(ctx.resetAt)
-				: (ctx.weekly ? roundToHour : roundToTenMinutes)(new Date(Date.now() + msLeft));
-			span.textContent = ' (at ' + formatResetAt(ctx, at) + ')';
+			var at;
+			if (ctx.reset && ctx.reset.text) {
+				at = ctx.reset.text;
+			} else if (ctx.reset && ctx.reset.at !== null) {
+				at = 'at ' + formatResetAt(ctx, new Date(ctx.reset.at));
+			} else {
+				var round = ctx.weekly ? roundToHour : roundToTenMinutes;
+				at = 'at ' + formatResetAt(ctx, round(new Date(Date.now() + msLeft)));
+			}
+			span.textContent = ' (' + at + ')';
 			anchor.appendChild(span);
 		}
 
-		function updateCtx(ctx) {
+		function updateCtx(ctx, allowProbe) {
 			Array.from(ctx.row.querySelectorAll('[data-tgif="reset-at"]')).forEach(function (el) {
 				el.remove();
 			});
 
 			var relMs = readMsLeft(ctx.row);
 			if (relMs === null) {
-				ctx.resetAt = null;
+				ctx.reset = null;
 				ctx.lastRelMs = null;
+				ctx.probes = 0;
 				ctx.marker.style.display = 'none';
 				ctx.hoverState = null;
 				var endAt = ctx.weekly
@@ -578,11 +711,16 @@
 				return;
 			}
 
-			if (ctx.lastRelMs !== null && relMs > ctx.lastRelMs) ctx.resetAt = null;
+			if (ctx.lastRelMs !== null && relMs > ctx.lastRelMs) {
+				ctx.reset = null;
+				ctx.probes = 0;
+			}
 			ctx.lastRelMs = relMs;
-			if (ctx.resetAt === null) ctx.resetAt = captureResetAt(ctx, relMs);
+			if (!ctx.reset) captureReset(ctx, relMs, allowProbe);
 
-			var msLeft = ctx.resetAt !== null ? Math.max(0, ctx.resetAt - Date.now()) : relMs;
+			var msLeft = ctx.reset && ctx.reset.at !== null
+				? Math.max(0, ctx.reset.at - Date.now())
+				: relMs;
 
 			ctx.marker.style.display = '';
 			annotateResetAt(ctx, msLeft);
@@ -621,21 +759,21 @@
 			});
 		}
 
-		function update() {
+		function update(allowProbe) {
 			if (observer) observer.disconnect();
 			annotateCredits();
-			contexts.forEach(updateCtx);
+			contexts.forEach(function (ctx) { updateCtx(ctx, allowProbe); });
 			if (observer && observedRoot) {
 				observer.observe(observedRoot, { childList: true, subtree: true, characterData: true });
 			}
 		}
 
-		update();
+		update(true);
 
 		// ChatGPT exposes no "Last updated" node, so the countdown has to self-tick
-		track('intervals', setInterval(update, 30000));
+		track('intervals', setInterval(function () { update(true); }, 30000));
 		if (observedRoot) {
-			observer = track('observers', new MutationObserver(update));
+			observer = track('observers', new MutationObserver(function () { update(false); }));
 			observer.observe(observedRoot, { childList: true, subtree: true, characterData: true });
 		}
 	}
@@ -647,7 +785,7 @@
 		runClaude();
 	} else if (/(^|\.)(chatgpt\.com|openai\.com)$/.test(host)) {
 		runChatgpt();
-	} else if (document.getElementById('usage-panel-usage')) {
+	} else if (document.getElementById('usage-panel-usage') || document.getElementById('modal-settings')) {
 		runChatgpt();
 	} else {
 		runClaude();
