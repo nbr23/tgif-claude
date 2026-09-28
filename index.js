@@ -244,8 +244,8 @@
 
 	var CLAUDE_LANGS = {
 		en: {
-			detect:        /^Resets \w+ \d{1,2}:\d{2} [AP]M$/,
-			parse:         /Resets (\w+) (\d+):(\d+) ([AP]M)/,
+			detect:        /^Resets (?:on )?\w+\.? \d{1,2}:\d{2} [AP]M$/,
+			parse:         /Resets (?:on )?(\w+)\.? (\d+):(\d+) ([AP]M)/,
 			relative:      /^Resets in /,
 			relParse:      /Resets in (?:(\d+)\s*d\s*)?(?:(\d+)\s*hr?\s*)?(?:(\d+)\s*min)?/,
 			days:          { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 },
@@ -268,8 +268,8 @@
 			weeklyText:    'This week',
 		},
 		fr: {
-			detect:        /^Réinitialisation \w{3}\. \d{1,2}:\d{2}$/,
-			parse:         /Réinitialisation (\w+)\. (\d+):(\d+)/,
+			detect:        /^Réinitialisation (?:le )?[a-z]+\.? \d{1,2}:\d{2}$/,
+			parse:         /Réinitialisation (?:le )?([a-z]+)\.? (\d+):(\d+)/,
 			relative:      /^Réinitialisation dans /,
 			relParse:      /Réinitialisation dans (?:(\d+)\s*j\s*)?(?:(\d+)\s*h\s*)?(?:(\d+)\s*min)?/,
 			days:          { dim: 0, lun: 1, mar: 2, mer: 3, jeu: 4, ven: 5, sam: 6 },
